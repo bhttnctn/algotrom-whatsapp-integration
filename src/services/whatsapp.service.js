@@ -1,13 +1,14 @@
 const axios = require('axios');
 const config = require('../config/whatsapp.config');
+const dbConfig = require('../config/db.config');
+const sql = require('mssql');
 
 async function sendMessage(to, message) {
-
     console.log("Mesaj gönderiliyor:", message);
 
     try {
         const url = `${config.baseUrl}/${config.apiVersion}/${config.phoneNumberId}/messages`;
-        
+
         const response = await axios.post(url, {
             messaging_product: "whatsapp",
             recipient_type: "individual",
@@ -20,7 +21,7 @@ async function sendMessage(to, message) {
                 'Content-Type': 'application/json'
             }
         });
-        
+
         console.log("Mesaj gönderildi:", response.data);
 
         return response.data;
@@ -56,4 +57,37 @@ async function sendInteractiveMenu(to) {
     await sendMessage(to, menu);
 }
 
-module.exports = { sendMessage, sendInteractiveMenu };
+async function queryRepairStatus(sorguNumarasi) {
+    try {
+        // MSSQL bağlantısını başlat
+        const pool = await sql.connect(dbConfig);
+
+        // Sorguyu çalıştır
+        const result = await pool.request()
+            .input('sorguNumarasi', sql.VarChar, sorguNumarasi) // Parametreyi bağla
+            .query('SELECT DURUM FROM TAMIR_TALIP_TABLOSU WHERE SORGU_NUMARASI = @sorguNumarasi');
+
+        // Sonuçları kontrol et
+        if (result.recordset.length > 0) {
+            return result.recordset[0].DURUM; // DURUM sütunundaki değeri döndür
+        } else {
+            return 'Sorgu numarasına ait bir kayıt bulunamadı.';
+        }
+    } catch (error) {
+        console.error('MSSQL Query Error:', error);
+        throw new Error('Veritabanı sorgusu sırasında bir hata oluştu.');
+    }
+}
+
+async function handleRepairStatusRequest(to, sorguNumarasi) {
+    try {
+        const status = await queryRepairStatus(sorguNumarasi); // Veritabanından durumu al
+        const message = `Tamir sorgulama sonucu: ${status}`;
+        await sendMessage(to, message); // Müşteriye sonucu gönder
+    } catch (error) {
+        console.error('Error handling repair status request:', error);
+        await sendMessage(to, 'Tamir durumu sorgulama sırasında bir hata oluştu. Lütfen daha sonra tekrar deneyiniz.');
+    }
+}
+
+module.exports = { sendMessage, sendInteractiveMenu, handleRepairStatusRequest };

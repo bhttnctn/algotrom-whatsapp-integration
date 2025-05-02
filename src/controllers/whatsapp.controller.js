@@ -12,7 +12,7 @@ async function webhookHandler(req, res) {
         }
 
         const message = entry[0].changes[0].value.messages[0];
-        const from = message.from;
+        const from = message.from; // Gönderenin telefon numarası
 
         console.log("Mesaj:", message);
         console.log("Gönderen:", from);
@@ -20,26 +20,15 @@ async function webhookHandler(req, res) {
         const currentState = userStates.get(from) || 'initial';
 
         if (message.type === 'text') {
-            const text = message.text.body.toLowerCase();
+            const text = message.text.body.trim();
 
             if (currentState === 'waiting_for_query_number') {
-                await WhatsAppService.sendMessage(
-                    from,
-                    `Sorgu numaranız: ${text} işleniyor. Lütfen bekleyin.`
-                );
-                userStates.delete(from);
+                // Kullanıcı sorgu numarasını girdi
+                userStates.delete(from); // Durumu sıfırla
+                await WhatsAppService.handleRepairStatusRequest(from, text); // Sorgu numarasını işle
             } else {
-                await WhatsAppService.sendMessage(
-                    from,
-                    "Merhaba, Algotrom Whatsapp hattına hoşgeldiniz.\n" +
-                    "Lütfen yapmak istediğiniz işlemi seçiniz:\n" +
-                    "1- Tamir durumu sorgulama\n" +
-                    "2- Kargo durumu sorgulama\n" +
-                    "3- Ürün satın alma\n" +
-                    "4- Raporlar\n" +
-                    "5- Öneri ve şikayet\n" +
-                    "6- Diğer"
-                );
+                // Kullanıcı başka bir mesaj gönderdi
+                await WhatsAppService.sendInteractiveMenu(from); // Menü gönder
                 userStates.set(from, 'waiting_for_selection');
             }
         } else if (message.type === 'interactive') {

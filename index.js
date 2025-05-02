@@ -1,3 +1,5 @@
+const webhookHandler = require('./src/controllers/whatsapp.controller'); // Import webhookHandler
+
 console.log("Lambda function initialized");
 
 exports.handler = async (event, context, callback) => { // async olarak tanımlandı
