@@ -1,8 +1,9 @@
 module.exports = {
-    user: 'admin',
-    password: 'Alg.12345',
-    server: 'algotrom.cdcoiq0akjms.eu-north-1.rds.amazonaws.com', // Örneğin: 'localhost' veya bir IP adresi
-    database: 'algotrom',
+    user: 'GITEA',
+    password: 'Gitea.2025',
+    server: '10.71.49.201', // Örneğin: 'localhost' veya bir IP adresi
+    port: 1433,
+    database: 'GITEA',
     options: {
         encrypt: true, // Azure için true olmalı
         trustServerCertificate: true, // Yerel geliştirme için true olabilir
