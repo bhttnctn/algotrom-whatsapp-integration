@@ -1,20 +1,26 @@
+require('dotenv').config();
 const axios = require('axios');
+const sql = require('mssql');
 const config = require('../config/whatsapp.config');
 const dbConfig = require('../config/db.config');
-const sql = require('mssql');
 
-async function sendMessage(to, message) {
-    console.log("Mesaj gönderiliyor:", message);
+const isDev = process.env.ENVIRONMENT === 'development';
+
+async function sendMessage(to, messagePayload) {
+    
+    if (isDev) {
+        console.log("🌱 Geliştirme ortamı - Mesaj gönderimi yapılmadı:", messagePayload);
+        return;
+    }
+
+    const url = `${config.baseUrl}/${config.apiVersion}/${config.phoneNumberId}/messages`;
 
     try {
-        const url = `${config.baseUrl}/${config.apiVersion}/${config.phoneNumberId}/messages`;
-
         const response = await axios.post(url, {
             messaging_product: "whatsapp",
             recipient_type: "individual",
-            to: to,
-            type: "text",
-            text: { body: message }
+            to,
+            ...messagePayload
         }, {
             headers: {
                 'Authorization': `Bearer ${config.accessToken}`,
@@ -22,25 +28,24 @@ async function sendMessage(to, message) {
             }
         });
 
-        console.log("Mesaj gönderildi:", response.data);
-
+        console.log("✅ Mesaj başarıyla gönderildi:", response.data);
         return response.data;
     } catch (error) {
-        console.error('WhatsApp API Error:', error.response?.data || error);
+        console.error('❌ WhatsApp API Hatası:', error.response?.data || error.message);
         throw error;
     }
 }
 
-async function sendInteractiveMenu(to) {
-    const menu = {
-        recipient_type: "individual",
-        to,
+function textPayload(body) {
+    return { type: "text", text: { body } };
+}
+
+function interactiveMenuPayload() {
+    return {
         type: "interactive",
         interactive: {
             type: "button",
-            body: {
-                text: "Lütfen yapmak istediğiniz işlemi seçiniz:"
-            },
+            body: { text: "Lütfen yapmak istediğiniz işlemi seçiniz:" },
             action: {
                 buttons: [
                     { type: "reply", reply: { id: "1", title: "Tamir durumu sorgulama" } },
@@ -53,41 +58,93 @@ async function sendInteractiveMenu(to) {
             }
         }
     };
+}
 
-    await sendMessage(to, menu);
+async function sendText(to, body) {
+    return sendMessage(to, textPayload(body));
+}
+
+async function sendInteractiveMenu(to) {
+    return sendMessage(to, interactiveMenuPayload());
 }
 
 async function queryRepairStatus(sorguNumarasi) {
     try {
-        // MSSQL bağlantısını başlat
         const pool = await sql.connect(dbConfig);
-
-        // Sorguyu çalıştır
         const result = await pool.request()
-            .input('sorguNumarasi', sql.VarChar, sorguNumarasi) // Parametreyi bağla
+            .input('sorguNumarasi', sql.VarChar, sorguNumarasi)
             .query('SELECT DURUM FROM TAMIR_TALIP_TABLOSU WHERE SORGU_NUMARASI = @sorguNumarasi');
 
-        // Sonuçları kontrol et
-        if (result.recordset.length > 0) {
-            return result.recordset[0].DURUM; // DURUM sütunundaki değeri döndür
-        } else {
-            return 'Sorgu numarasına ait bir kayıt bulunamadı.';
-        }
+        return result.recordset.length > 0
+            ? result.recordset[0].DURUM
+            : 'Sorgu numarasına ait bir kayıt bulunamadı.';
     } catch (error) {
-        console.error('MSSQL Query Error:', error);
+        console.error('🔌 Veritabanı Hatası:', error);
         throw new Error('Veritabanı sorgusu sırasında bir hata oluştu.');
     }
 }
 
 async function handleRepairStatusRequest(to, sorguNumarasi) {
     try {
-        const status = await queryRepairStatus(sorguNumarasi); // Veritabanından durumu al
-        const message = `Tamir sorgulama sonucu: ${status}`;
-        await sendMessage(to, message); // Müşteriye sonucu gönder
+        const status = await queryRepairStatus(sorguNumarasi);
+        await sendText(to, `Tamir sorgulama sonucu: ${status}`);
     } catch (error) {
-        console.error('Error handling repair status request:', error);
-        await sendMessage(to, 'Tamir durumu sorgulama sırasında bir hata oluştu. Lütfen daha sonra tekrar deneyiniz.');
+        console.error('🔍 Tamir sorgusu işlenirken hata:', error);
+        await sendText(to, 'Tamir durumu sorgulama sırasında bir hata oluştu. Lütfen daha sonra tekrar deneyiniz.');
     }
 }
 
-module.exports = { sendMessage, sendInteractiveMenu, handleRepairStatusRequest };
+async function handleTrackingRequest(to, trackingNumber) {
+    try {
+        // Örnek bir takip mesajı, gerçek entegrasyon buraya eklenebilir
+        const message = `Kargo takip numaranız: ${trackingNumber}\nDurum: Kargo yolda 🚚📦`;
+        await sendText(to, message);
+    } catch (error) {
+        console.error('Kargo durumu sorgulama hatası:', error);
+        await sendText(to, 'Kargo durumu sorgulama sırasında bir hata oluştu. Lütfen tekrar deneyiniz.');
+    }
+}
+
+async function handleProductOrder(to, productCode) {
+    try {
+        // Örnek cevap, ürün stoğu veya fiyatı sorgulanabilir
+        const message = `Ürün kodunuz: ${productCode}\nSipariş talebiniz alınmıştır. Yetkililerimiz en kısa sürede sizinle iletişime geçecektir. 🛒`;
+        await sendText(to, message);
+    } catch (error) {
+        console.error('Ürün siparişi işleme hatası:', error);
+        await sendText(to, 'Ürün satın alma işlemi sırasında bir hata oluştu. Lütfen tekrar deneyiniz.');
+    }
+}
+
+async function handleReportRequest(to, reportType) {
+    try {
+        // Rapor üretme işlemi buraya entegre edilebilir
+        const message = `Talep edilen rapor: ${reportType}\nRapor hazırlanıyor. En kısa sürede tarafınıza iletilecektir. 📄`;
+        await sendText(to, message);
+    } catch (error) {
+        console.error('Rapor talebi hatası:', error);
+        await sendText(to, 'Rapor talebi işlenirken bir hata oluştu. Lütfen tekrar deneyiniz.');
+    }
+}
+
+async function handleFeedback(to, feedbackMessage) {
+    try {
+        // Geri bildirim veritabanına kaydedilebilir
+        const message = `Geri bildiriminiz için teşekkür ederiz! 💬\nMesajınız: "${feedbackMessage}"`;
+        await sendText(to, message);
+    } catch (error) {
+        console.error('Geri bildirim hatası:', error);
+        await sendText(to, 'Öneri ve şikayet gönderilirken bir hata oluştu. Lütfen tekrar deneyiniz.');
+    }
+}
+
+module.exports = {
+    sendMessage,
+    sendText,
+    sendInteractiveMenu,
+    handleRepairStatusRequest,
+    handleTrackingRequest,
+    handleProductOrder,
+    handleReportRequest,
+    handleFeedback
+};
