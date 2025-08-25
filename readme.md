@@ -1,29 +1,16 @@
-NODEJS
+# Algotrom WhatsApp Integration
 
-PS C:\Workspace\Algotrom-WA-Integration>
-npm install
-pm2 start index.js
-pm2 restart wa-alg
-pm2 logs --lines 25
+## Docker
 
-	
-http://localhost:29876/wa-integ/db/data
+```dockerfile
+FROM node:20
+WORKDIR /usr/src/app
+COPY package*.json ./
+RUN npm install
+COPY . .
+EXPOSE 3000
+CMD ["node", "index.js"]
+```
 
-
-
-
-NGINX
-
-PS C:\nginx-1.28.0> 
-start .\nginx.exe
-.\nginx.exe -s reload
-
-http://localhost:29876/
-
-
-
-
-GITEA
-
-http://localhost:3000/
-http://localhost:29876/gitea/
+## License
+This project is developed for Algotrom Yazılım.

@@ -1,83 +1,48 @@
-require('dotenv').config();
 const express = require('express');
-const sql = require('mssql');
+const bodyParser = require('body-parser');
+require('dotenv').config();
 
-const dbConfig = require('./src/config/db.config');
-const webhookHandler = require('./src/controllers/whatsapp.controller');
+const whatsappWebhook = require('./src/controllers/whatsapp.controller');
+const db = require('./src/services/db.service');
 
 const app = express();
-const PORT = process.env.PORT || 28080;
+app.use(bodyParser.json());
 
-app.use(express.json());
+const PORT = process.env.PORT || 3000;
 
-// Ana sayfa
-app.get('/', (req, res) => {
-    res.send(`
-        <html>
-            <head>
-                <style>
-                    body {
-                        display: flex;
-                        justify-content: center;
-                        align-items: center;
-                        height: 100vh;
-                        font-family: Arial, sans-serif;
-                        background: #f9f9f9;
-                    }
-                    .content {
-                        text-align: center;
-                    }
-                </style>
-            </head>
-            <body>
-                <div class="content">
-                    <p>Bu Algotrom WhatsApp Entegrasyon uygulamasıdır.</p>
-                    <p>🚀 İş Akışınızı Akıllandırın, Geleceği Şimdi Yönetin!</p>
-                    <p>Algotrom ile E-Flow'la tanışın!</p>
-                    <a href="https://algotrom.com.tr/" target="_blank">https://algotrom.com.tr/</a>
-                </div>
-            </body>
-        </html>
-    `);
-});
+app.post('/webhook', whatsappWebhook.webhookHandler);
 
-// Webhook doğrulama
 app.get('/webhook', (req, res) => {
-    const VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN;
-    const { ["hub.mode"]: mode, ["hub.verify_token"]: token, ["hub.challenge"]: challenge } = req.query;
+    const verify_token = process.env.WHATSAPP_VERIFY_TOKEN;
+    const mode = req.query['hub.mode'];
+    const token = req.query['hub.verify_token'];
+    const challenge = req.query['hub.challenge'];
 
-    if (mode === 'subscribe' && token === VERIFY_TOKEN) {
-        console.log("Webhook verified!");
-        return res.status(200).send(challenge);
+    if (mode && token) {
+        if (mode === 'subscribe' && token === verify_token) {
+            console.log('WEBHOOK_VERIFIED');
+            return res.status(200).send(challenge);
+        }
+        return res.sendStatus(403);
     }
-
-    res.sendStatus(403);
+    return res.sendStatus(400);
 });
 
-// Webhook mesaj işleme
-app.post('/webhook', async (req, res) => {
-    console.log("Webhook POST alındı");
+setInterval(async () => {
     try {
-        await webhookHandler(req, res);
+        const timeoutCount = await db.checkAndEndTimeoutProcesses();
+        if (timeoutCount > 0) {
+            console.log(`⏰ ${timeoutCount} process(es) ended due to timeout`);
+        }
+        if (typeof whatsappWebhook.sendTimeoutMessages === 'function') {
+            await whatsappWebhook.sendTimeoutMessages();
+        }
     } catch (err) {
-        console.error("Webhook işleme hatası:", err);
-        res.status(500).json({ message: 'Internal Server Error' });
+        console.error('Timeout maintenance error:', err.message);
     }
-});
+}, 30000); 
 
-// MSSQL test endpoint
-app.get('/db/data', async (req, res) => {
-    try {
-        const pool = await sql.connect(dbConfig);
-        const result = await pool.request().query('SELECT * FROM GITEA.dbo.version');
-        res.json(result.recordset);
-    } catch (err) {
-        console.error('DB Hatası:', err);
-        res.status(500).json({ message: 'Veritabanı sorgusu sırasında bir hata oluştu.' });
-    }
-});
-
-// Sunucuyu başlat
 app.listen(PORT, () => {
-    console.log(`🚀 Sunucu çalışıyor: http://localhost:${PORT}`);
+    console.log(`🚀 Server is listening on port ${PORT}`);
+    console.log(`⏰ Timeout monitor active (every 30s)`);
 });
